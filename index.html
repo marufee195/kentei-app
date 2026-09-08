@@ -62,9 +62,10 @@
     padding:1px 6px;border-radius:7px;margin:0 2px;vertical-align:middle;position:relative;top:-4px;letter-spacing:0.2px;}
   .choice{display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:9px;
     border-radius:11px;border:1px solid var(--line);background:var(--card);font-size:17px;line-height:1.65;padding:15px 16px;
-    color:var(--ink);font-family:inherit;-webkit-appearance:none;appearance:none;}
+    color:var(--ink)!important;-webkit-text-fill-color:var(--ink);opacity:1;font-family:inherit;-webkit-appearance:none;appearance:none;}
+  .choice *{color:inherit;-webkit-text-fill-color:inherit;}
   .choice .num{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;
-    border-radius:50%;background:#efe6dc;color:var(--accent);font-size:14px;margin-right:9px;font-weight:700;}
+    border-radius:50%;background:#efe6dc;color:var(--accent)!important;-webkit-text-fill-color:var(--accent);font-size:14px;margin-right:9px;font-weight:700;}
   .choice.correct{border-color:var(--ok);background:#eaf5ec;}
   .choice.wrong{border-color:var(--ng);background:#fbebe9;}
   .choice.disabled{opacity:.55;}
