@@ -102,6 +102,12 @@
 
     <!-- ホーム -->
     <section class="screen active" id="screen-home">
+      <div class="mode-card" id="resumeCard" style="display:none;border-color:var(--accent);">
+        <h2>前回の続き</h2>
+        <div class="sub" id="resumeInfo" style="font-size:13.5px;color:var(--sub);margin-bottom:10px;"></div>
+        <button class="start-btn" id="resumeBtn">続きから再開する</button>
+        <a class="reset-link" id="discardResumeLink" style="margin-top:10px;">この続きを削除して新しく始める</a>
+      </div>
       <div class="stat-grid">
         <div class="stat-box"><div class="num" id="statTotal">0</div><div class="label">総回答数</div></div>
         <div class="stat-box"><div class="num" id="statRate">-</div><div class="label">正答率</div></div>
@@ -135,6 +141,7 @@
 
     <!-- クイズ -->
     <section class="screen" id="screen-quiz">
+      <div class="q-tag" id="quizPauseLink" style="text-align:right;color:var(--sub);font-size:12.5px;text-decoration:underline;cursor:pointer;margin-bottom:6px;">中断してホームに戻る</div>
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
       <div class="q-tag" id="qTag"></div>
       <div class="q-cat" id="qCat"></div>
@@ -7066,11 +7073,14 @@ const QUESTIONS = [
 
 /* ========= 状態管理 ========= */
 const STORAGE_KEY = "kentei_app_progress_v1";
+const SESSION_KEY = "kentei_app_session_v1";
 let progress = loadProgress();
 let sessionQueue = [];
 let sessionIndex = 0;
 let sessionAnswers = []; // {id, correct}
 let currentMode = "order";
+let currentRangeLabel = "全体(試験I・II・III)";
+let currentModeLabel = "順番に解く";
 
 function loadProgress(){
   try{
@@ -7091,6 +7101,63 @@ function recordAnswer(qid, isCorrect){
   if(isCorrect) s.correct += 1;
   progress[qid] = s;
   saveProgress();
+}
+
+/* ========= 中断・再開(セッションの一時保存) ========= */
+function saveSessionState(){
+  try{
+    const state = {
+      queueIds: sessionQueue.map(q=>q.id),
+      index: sessionIndex,
+      answers: sessionAnswers,
+      rangeLabel: currentRangeLabel,
+      modeLabel: currentModeLabel
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  }catch(e){}
+}
+function loadSessionState(){
+  try{
+    const raw = localStorage.getItem(SESSION_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
+function clearSessionState(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+}
+function renderResumeCard(){
+  const card = document.getElementById("resumeCard");
+  const state = loadSessionState();
+  if(!state || !state.queueIds || state.index >= state.queueIds.length){
+    card.style.display = "none";
+    return;
+  }
+  const correctSoFar = state.answers.filter(a=>a.correct).length;
+  document.getElementById("resumeInfo").textContent =
+    `${state.rangeLabel} / ${state.modeLabel} — ${state.index}問目まで回答済み(${state.index}/${state.queueIds.length}問中、正答${correctSoFar}問)`;
+  card.style.display = "block";
+}
+function resumeSession(){
+  const state = loadSessionState();
+  if(!state) return;
+  const byId = {};
+  QUESTIONS.forEach(q=>{ byId[q.id] = q; });
+  const restoredQueue = state.queueIds.map(id=>byId[id]).filter(Boolean);
+  if(restoredQueue.length !== state.queueIds.length || state.index >= restoredQueue.length){
+    // データが変わっている等で復元できない場合は諦めて破棄
+    clearSessionState();
+    renderResumeCard();
+    alert("前回の続きを復元できませんでした。お手数ですが、最初から解き直してください。");
+    return;
+  }
+  sessionQueue = restoredQueue;
+  sessionIndex = state.index;
+  sessionAnswers = state.answers;
+  currentRangeLabel = state.rangeLabel;
+  currentModeLabel = state.modeLabel;
+  showScreen("screen-quiz");
+  renderQuestion();
 }
 
 /* ========= 画面切り替え ========= */
@@ -7115,12 +7182,24 @@ function renderHomeStats(){
 }
 
 /* ========= 範囲・モード選択 ========= */
+const RANGE_LABELS = {
+  "all": "全体(試験I・II・III)",
+  "R1-test1": "試験I",
+  "R1-II": "試験II(聴解)",
+  "R1-16-": "試験III"
+};
+const MODE_LABELS = {
+  "order": "順番に解く",
+  "random": "ランダム出題",
+  "weak": "苦手優先(復習モード)"
+};
 let currentRange = "all";
 document.querySelectorAll(".range-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     document.querySelectorAll(".range-btn").forEach(b=>b.style.background="");
     btn.style.background="#f0e9e0";
     currentRange = btn.dataset.range;
+    currentRangeLabel = RANGE_LABELS[currentRange] || currentRange;
   });
 });
 document.querySelector('.range-btn[data-range="all"]').style.background = "#f0e9e0";
@@ -7130,11 +7209,20 @@ document.querySelectorAll(".mode-btn").forEach(btn=>{
     document.querySelectorAll(".mode-btn").forEach(b=>b.style.background="");
     btn.style.background="#f0e9e0";
     currentMode = btn.dataset.mode;
+    currentModeLabel = MODE_LABELS[currentMode] || currentMode;
   });
 });
 document.querySelector('.mode-btn[data-mode="order"]').style.background = "#f0e9e0";
 
-document.getElementById("startBtn").addEventListener("click", startSession);
+document.getElementById("startBtn").addEventListener("click", ()=>{
+  const existing = loadSessionState();
+  if(existing && existing.queueIds && existing.index < existing.queueIds.length){
+    if(!confirm("前回の続きが残っています。新しく始めると、その続きは削除されます。よろしいですか?")){
+      return;
+    }
+  }
+  startSession();
+});
 document.getElementById("resetLink").addEventListener("click", ()=>{
   if(confirm("保存されている成績データをすべて削除します。よろしいですか?")){
     progress = {};
@@ -7170,6 +7258,7 @@ function startSession(){
   sessionQueue = list;
   sessionIndex = 0;
   sessionAnswers = [];
+  saveSessionState();
   showScreen("screen-quiz");
   renderQuestion();
 }
@@ -7343,12 +7432,14 @@ document.getElementById("nextBtn").addEventListener("click", ()=>{
   if(sessionIndex >= sessionQueue.length){
     finishSession();
   } else {
+    saveSessionState();
     renderQuestion();
   }
 });
 
 /* ========= 結果画面 ========= */
 function finishSession(){
+  clearSessionState();
   const correctCount = sessionAnswers.filter(a=>a.correct).length;
   document.getElementById("resultScore").textContent = `${correctCount}/${sessionAnswers.length}`;
   const list = document.getElementById("reviewList");
@@ -7363,11 +7454,25 @@ function finishSession(){
 }
 document.getElementById("backHomeBtn").addEventListener("click", ()=>{
   renderHomeStats();
+  renderResumeCard();
   showScreen("screen-home");
+});
+document.getElementById("quizPauseLink").addEventListener("click", ()=>{
+  renderHomeStats();
+  renderResumeCard();
+  showScreen("screen-home");
+});
+document.getElementById("resumeBtn").addEventListener("click", resumeSession);
+document.getElementById("discardResumeLink").addEventListener("click", ()=>{
+  if(confirm("前回の続きを削除します。よろしいですか?")){
+    clearSessionState();
+    renderResumeCard();
+  }
 });
 
 /* ========= 初期化 ========= */
 renderHomeStats();
+renderResumeCard();
 </script>
 </body>
 </html>
