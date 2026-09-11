@@ -45,6 +45,13 @@
   .range-btn{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#faf8f5;
     text-align:left;font-size:16px;color:var(--ink);}
   .range-btn:active{background:#f0e9e0;}
+  .sub-label{font-size:12.5px;color:var(--sub);margin:10px 0 6px;font-weight:600;}
+  .sub-label:first-of-type{margin-top:0;}
+  .chip-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip-btn{padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#faf8f5;
+    font-size:14.5px;color:var(--ink);-webkit-text-fill-color:var(--ink);font-family:inherit;-webkit-appearance:none;appearance:none;}
+  .chip-btn:active{background:#f0e9e0;}
+  .chip-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;-webkit-text-fill-color:#fff;font-weight:700;}
   .start-btn{width:100%;padding:14px;border:none;border-radius:12px;background:var(--accent);
     color:#fff;font-size:17.5px;font-weight:700;margin-top:6px;}
   .start-btn:active{background:var(--accent2);}
@@ -119,11 +126,26 @@
 
       <div class="mode-card">
         <h2>出題範囲</h2>
-        <div class="mode-btns">
-          <button class="range-btn" data-range="all">全体(試験I・II・III)</button>
-          <button class="range-btn" data-range="R1-test1">試験I</button>
-          <button class="range-btn" data-range="R1-II">試験II(聴解)</button>
-          <button class="range-btn" data-range="R1-16-">試験III</button>
+        <div class="sub-label">年度</div>
+        <div class="chip-row" id="yearBtns">
+          <button class="chip-btn" data-year="all">全年度</button>
+          <button class="chip-btn" data-year="R1">R1</button>
+          <button class="chip-btn" data-year="R2">R2</button>
+          <button class="chip-btn" data-year="R3">R3</button>
+          <button class="chip-btn" data-year="R4">R4</button>
+          <button class="chip-btn" data-year="R5">R5</button>
+          <button class="chip-btn" data-year="R7">R7</button>
+        </div>
+        <div class="sub-label">試験</div>
+        <div class="chip-row" id="partBtns">
+          <button class="chip-btn" data-part="all">全体</button>
+          <button class="chip-btn" data-part="I">試験I</button>
+          <button class="chip-btn" data-part="II">試験II(聴解)</button>
+          <button class="chip-btn" data-part="III">試験III</button>
+        </div>
+        <div class="sub-label">絞り込み</div>
+        <div class="chip-row">
+          <button class="chip-btn" id="frequentToggle">頻出問題のみ</button>
         </div>
       </div>
 
@@ -7185,27 +7207,65 @@ function renderHomeStats(){
 }
 
 /* ========= 範囲・モード選択 ========= */
-const RANGE_LABELS = {
-  "all": "全体(試験I・II・III)",
-  "R1-test1": "試験I",
-  "R1-II": "試験II(聴解)",
-  "R1-16-": "試験III"
-};
+const PART_LABELS = {"all":"全体", "I":"試験I", "II":"試験II(聴解)", "III":"試験III"};
 const MODE_LABELS = {
   "order": "順番に解く",
   "random": "ランダム出題",
   "weak": "苦手優先(復習モード)"
 };
-let currentRange = "all";
-document.querySelectorAll(".range-btn").forEach(btn=>{
+// 頻出テーマ:全年度のcat/tagを分析し、3年度以上にまたがって出現する具体的テーマを抽出したもの
+const FREQUENT_KEYWORDS = ["ストラテジー","アクセント","異文化","評価","語用論","敬語","受身","格助詞","引用",
+  "待遇表現","ロールプレイ","シラバス","オノマトペ","使役","ポートフォリオ","多読","誤用分析","留学生","言語政策"];
+function getYear(id){
+  const m = id.match(/^([A-Za-z0-9]+?)-/);
+  return m ? m[1] : "";
+}
+function getExamPart(id){
+  if(id.includes("-II-")) return "II";
+  if(/^[^-]+-16-/.test(id) || id.includes("-III-")) return "III";
+  return "I";
+}
+function isFrequentQuestion(q){
+  const text = (q.cat||"") + " " + (q.tag||"");
+  return FREQUENT_KEYWORDS.some(kw=>text.includes(kw));
+}
+let currentYear = "all";
+let currentPart = "all";
+let frequentOnly = false;
+function updateRangeLabel(){
+  const parts = [];
+  parts.push(currentYear === "all" ? "全年度" : currentYear);
+  parts.push(PART_LABELS[currentPart] || currentPart);
+  if(frequentOnly) parts.push("頻出のみ");
+  currentRangeLabel = parts.join(" / ");
+}
+updateRangeLabel();
+
+document.querySelectorAll('.chip-btn[data-year]').forEach(btn=>{
   btn.addEventListener("click", ()=>{
-    document.querySelectorAll(".range-btn").forEach(b=>b.style.background="");
-    btn.style.background="#f0e9e0";
-    currentRange = btn.dataset.range;
-    currentRangeLabel = RANGE_LABELS[currentRange] || currentRange;
+    document.querySelectorAll('.chip-btn[data-year]').forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentYear = btn.dataset.year;
+    updateRangeLabel();
   });
 });
-document.querySelector('.range-btn[data-range="all"]').style.background = "#f0e9e0";
+document.querySelector('.chip-btn[data-year="all"]').classList.add("active");
+
+document.querySelectorAll('.chip-btn[data-part]').forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll('.chip-btn[data-part]').forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentPart = btn.dataset.part;
+    updateRangeLabel();
+  });
+});
+document.querySelector('.chip-btn[data-part="all"]').classList.add("active");
+
+document.getElementById("frequentToggle").addEventListener("click", ()=>{
+  frequentOnly = !frequentOnly;
+  document.getElementById("frequentToggle").classList.toggle("active", frequentOnly);
+  updateRangeLabel();
+});
 
 document.querySelectorAll(".mode-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -7237,12 +7297,14 @@ document.getElementById("resetLink").addEventListener("click", ()=>{
 /* ========= セッション開始 ========= */
 function startSession(){
   let list = QUESTIONS.slice();
-  if(currentRange !== "all"){
-    if(currentRange === "R1-test1"){
-      list = list.filter(q => /^R1-(1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)-/.test(q.id));
-    } else {
-      list = list.filter(q => q.id.startsWith(currentRange));
-    }
+  if(currentYear !== "all"){
+    list = list.filter(q => getYear(q.id) === currentYear);
+  }
+  if(currentPart !== "all"){
+    list = list.filter(q => getExamPart(q.id) === currentPart);
+  }
+  if(frequentOnly){
+    list = list.filter(isFrequentQuestion);
   }
   if(list.length === 0){
     alert("この範囲には問題がありません。");
