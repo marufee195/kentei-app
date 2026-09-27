@@ -7564,10 +7564,15 @@ function shuffle(arr){
 function parsePassageGroupTag(tag){
   // 例:"R1 試験III 問題2 問3" → {key:"R1 試験III 問題2", num:3}
   let m = tag.match(/^(.*問題\d+)\s問(\d+)$/);
-  if(m) return {key:m[1], num:parseInt(m[2],10)};
+  if(m) return {key:m[1], num:parseInt(m[2],10), type:'space'};
   // 例:"R1 試験I 問題3-B(8)" → {key:"R1 試験I 問題3-B", num:8}
   m = tag.match(/^(.*問題\d+-[A-Z])\((\d+)\)$/);
-  if(m) return {key:m[1], num:parseInt(m[2],10)};
+  if(m) return {key:m[1], num:parseInt(m[2],10), type:'letter'};
+  // 例:"R4 試験I 問題3(8)" → {key:"R4 試験I 問題3", num:8} (A/B/C等の枝番号がないパターン)
+  // 注意: この形式は「次の(1)〜(15)について…」のような独立した単発問題の連番でも使われるため、
+  // 本文共有グループとして扱うのは、後段のガード(文章中の、を参照する設問が複数ある場合)を通ったものだけに限定する。
+  m = tag.match(/^(.*問題\d+)\((\d+)\)$/);
+  if(m) return {key:m[1], num:parseInt(m[2],10), type:'plain'};
   return null;
 }
 function getPassageGroupKey(tag){
@@ -7584,12 +7589,20 @@ function extractPassage(fullText){
 function escapeHtml(s){
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
-function annotateUnderlines(passage, members){
+// 設問文に引用符付きで書かれていないため自動抽出できなかった下線部について、
+// 元のPDF(試験問題冊子)を目視で確認し、確実に読み取れたものだけを手作業で補っている一覧。
+// key: 本文共有グループのキー(問題番号-枝番号)、value: {文字: 本文中の下線部の文言}
+const MANUAL_UNDERLINE_PHRASES = {
+  "R1 試験I 問題3-B": {"D":"接尾辞"},
+  "R2 試験I 問題3-A": {"C":"広母音・中母音"}
+};
+function annotateUnderlines(passage, members, groupKey){
   // 各問いの文中にある「下線部A「〜」」等の記述を手掛かりに、
   // 本文中の該当箇所を実際の下線(<u>)+上付き文字で示す。
   let html = escapeHtml(passage);
   const seenLetters = new Set();
-  const re = /下線部([A-E])「((?:[^「」]|「[^」]*」)*)」/g;
+  // 「下線部A「...」」の他、「下線部A(「...」)」のように括弧で囲まれている場合にも対応
+  const re = /下線部([A-E])\(?「((?:[^「」]|「[^」]*」)*)」\)?/g;
   members.forEach(m=>{
     let match;
     re.lastIndex = 0;
@@ -7612,25 +7625,44 @@ function annotateUnderlines(passage, members){
       seenLetters.add(letter);
     }
   });
+  // 設問文からは自動抽出できなかったが、原本を確認して補った下線部
+  const manual = groupKey ? MANUAL_UNDERLINE_PHRASES[groupKey] : null;
+  if(manual){
+    Object.keys(manual).forEach(letter=>{
+      if(seenLetters.has(letter)) return;
+      const phrase = manual[letter];
+      const escPhrase = escapeHtml(phrase);
+      const idx = html.indexOf(escPhrase);
+      if(idx === -1) return;
+      html = html.slice(0, idx) + '<u>' + escPhrase + '</u><sup class="ul-mark">' + letter + '</sup>' + html.slice(idx + escPhrase.length);
+      seenLetters.add(letter);
+    });
+  }
   return html;
 }
 const PASSAGE_GROUPS = {}; // groupKey -> {leaderId, passage, annotatedHtml}
 (function buildPassageGroups(){
-  const buckets = {}; // key -> [{q, num}]
+  const buckets = {}; // key -> [{q, num, type}]
   QUESTIONS.forEach(q=>{
     const p = parsePassageGroupTag(q.tag);
     if(!p) return;
     if(!buckets[p.key]) buckets[p.key] = [];
-    buckets[p.key].push({q, num:p.num});
+    buckets[p.key].push({q, num:p.num, type:p.type});
   });
   Object.keys(buckets).forEach(key=>{
     const members = buckets[key];
+    // "plain"形式(問題N(M)、枝番号なし)は、独立した単発問題の連番(例:次の(1)〜(15)について…)にも
+    // 使われる形式なので、実際に複数の設問が「文章中の」を参照している場合に限り本文共有グループとして扱う。
+    if(members[0].type === 'plain'){
+      const refCount = members.filter(m => m.q.text.includes('文章中の')).length;
+      if(refCount < 2) return;
+    }
     // リーダーは、その章群の中で最も小さい問番号(問1など)を持つエントリ
     let leader = members[0];
     members.forEach(m=>{ if(m.num < leader.num) leader = m; });
     const passage = extractPassage(leader.q.text);
     if(passage){
-      const annotatedHtml = annotateUnderlines(passage, members.map(m=>m.q));
+      const annotatedHtml = annotateUnderlines(passage, members.map(m=>m.q), key);
       PASSAGE_GROUPS[key] = {leaderId: leader.q.id, passage, annotatedHtml};
     }
   });
