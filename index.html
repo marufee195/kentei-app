@@ -95,9 +95,11 @@
   .result-score .big{font-size:46px;font-weight:800;color:var(--accent);}
   .result-score .sub{font-size:14.5px;color:var(--sub);margin-top:4px;}
   .review-item{background:var(--card);border:1px solid var(--line);border-radius:10px;
-    padding:11px 13px;margin-bottom:8px;font-size:15px;display:flex;justify-content:space-between;align-items:center;}
+    padding:11px 13px;margin-bottom:8px;font-size:15px;}
+  .review-row{display:flex;justify-content:space-between;align-items:center;}
   .review-item .mark{font-weight:700;}
   .mark.ok{color:var(--ok);} .mark.ng{color:var(--ng);}
+  .review-answer{margin-top:6px;font-size:13px;color:var(--sub);}
   .backhome{width:100%;padding:13px;border:none;border-radius:11px;background:#efe6dc;
     color:var(--accent);font-size:17px;font-weight:700;margin-top:18px;}
 
@@ -118,6 +120,7 @@
         <h2>前回の続き</h2>
         <div class="sub" id="resumeInfo" style="font-size:13.5px;color:var(--sub);margin-bottom:10px;"></div>
         <button class="start-btn" id="resumeBtn">続きから再開する</button>
+        <button class="backhome" id="viewResultsSoFarBtn" style="margin-top:10px;">ここまでの結果を見る(見直し用)</button>
         <a class="reset-link" id="discardResumeLink" style="margin-top:10px;">この続きを削除して新しく始める</a>
       </div>
       <div class="stat-grid">
@@ -201,9 +204,10 @@
     <section class="screen" id="screen-result">
       <div class="result-score">
         <div class="big" id="resultScore">0/0</div>
-        <div class="sub">今回の正答率</div>
+        <div class="sub" id="resultSubLabel">今回の正答率</div>
       </div>
       <div id="reviewList"></div>
+      <button class="start-btn" id="resultResumeBtn" style="display:none;margin-bottom:10px;">続きから再開する</button>
       <button class="backhome" id="backHomeBtn">ホームに戻る</button>
     </section>
 
@@ -7274,6 +7278,7 @@ function clearSessionState(){
 function renderResumeCard(){
   const card = document.getElementById("resumeCard");
   const state = loadSessionState();
+  const viewBtn = document.getElementById("viewResultsSoFarBtn");
   if(!state || !state.queueIds || state.index >= state.queueIds.length){
     card.style.display = "none";
     return;
@@ -7282,6 +7287,16 @@ function renderResumeCard(){
   document.getElementById("resumeInfo").textContent =
     `${state.rangeLabel} / ${state.modeLabel} — ${state.index}問目まで回答済み(${state.index}/${state.queueIds.length}問中、正答${correctSoFar}問)`;
   card.style.display = "block";
+  if(viewBtn) viewBtn.style.display = state.answers.length > 0 ? "block" : "none";
+}
+/* 中断中でも、それまでに解答した問題の結果一覧を見直し用に表示する */
+function showResultsSoFar(){
+  const state = loadSessionState();
+  if(!state || !state.answers || state.answers.length === 0){
+    alert("まだ解答した問題がありません。");
+    return;
+  }
+  renderResultScreen(state.answers, {partial:true});
 }
 function resumeSession(){
   const state = loadSessionState();
@@ -7723,16 +7738,39 @@ document.getElementById("nextBtn").addEventListener("click", ()=>{
 /* ========= 結果画面 ========= */
 function finishSession(){
   clearSessionState();
-  const correctCount = sessionAnswers.filter(a=>a.correct).length;
-  document.getElementById("resultScore").textContent = `${correctCount}/${sessionAnswers.length}`;
+  renderResultScreen(sessionAnswers, {partial:false});
+}
+// answers: [{id, tag, correct}, ...]  opts.partial: 中断中の途中経過表示かどうか
+function renderResultScreen(answers, opts){
+  opts = opts || {};
+  const correctCount = answers.filter(a=>a.correct).length;
+  document.getElementById("resultScore").textContent = `${correctCount}/${answers.length}`;
+  document.getElementById("resultSubLabel").textContent = opts.partial ? "ここまでの正答率(未完了・見直し用)" : "今回の正答率";
+
+  const byId = {};
+  QUESTIONS.forEach(q=>{ byId[q.id] = q; });
+
   const list = document.getElementById("reviewList");
   list.innerHTML = "";
-  sessionAnswers.forEach(a=>{
+  answers.forEach(a=>{
+    const q = byId[a.id];
     const div = document.createElement("div");
     div.className = "review-item";
-    div.innerHTML = `<span>${a.tag}</span><span class="mark ${a.correct?'ok':'ng'}">${a.correct?'○':'×'}</span>`;
+    let extra = "";
+    if(!a.correct && q){
+      const labels = q.choiceLabels || null;
+      const ansLabel = labels ? labels[q.answer] : (q.answer+1);
+      const ansText = (q.choices && q.choices[q.answer]) ? q.choices[q.answer] : "";
+      extra = `<div class="review-answer">正解: ${ansLabel}${ansText ? "　" + ansText : ""}</div>`;
+    }
+    div.innerHTML = `<div class="review-row"><span>${a.tag}</span><span class="mark ${a.correct?'ok':'ng'}">${a.correct?'○':'×'}</span></div>${extra}`;
     list.appendChild(div);
   });
+
+  const resumeBtn = document.getElementById("resultResumeBtn");
+  resumeBtn.style.display = opts.partial ? "block" : "none";
+  document.getElementById("backHomeBtn").textContent = opts.partial ? "ホームに戻る(続きはそのまま保存されます)" : "ホームに戻る";
+
   showScreen("screen-result");
 }
 document.getElementById("backHomeBtn").addEventListener("click", ()=>{
@@ -7746,6 +7784,8 @@ document.getElementById("quizPauseLink").addEventListener("click", ()=>{
   showScreen("screen-home");
 });
 document.getElementById("resumeBtn").addEventListener("click", resumeSession);
+document.getElementById("viewResultsSoFarBtn").addEventListener("click", showResultsSoFar);
+document.getElementById("resultResumeBtn").addEventListener("click", resumeSession);
 document.getElementById("discardResumeLink").addEventListener("click", ()=>{
   if(confirm("前回の続きを削除します。よろしいですか?")){
     clearSessionState();
