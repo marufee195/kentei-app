@@ -7651,12 +7651,9 @@ const PASSAGE_GROUPS = {}; // groupKey -> {leaderId, passage, annotatedHtml}
   });
   Object.keys(buckets).forEach(key=>{
     const members = buckets[key];
-    // "plain"形式(問題N(M)、枝番号なし)は、独立した単発問題の連番(例:次の(1)〜(15)について…)にも
-    // 使われる形式なので、実際に複数の設問が「文章中の」を参照している場合に限り本文共有グループとして扱う。
-    if(members[0].type === 'plain'){
-      const refCount = members.filter(m => m.q.text.includes('文章中の')).length;
-      if(refCount < 2) return;
-    }
+    // "plain"形式(問題N(M)、枝番号なし)は、独立した単発問題の連番(例:次の(1)〜(15)について、【 】内に
+    // 示した観点から見て、他と性質の異なるものを、それぞれ選べ、のような設問群)にも使われる。
+    // この場合も、共通の指示文(問題文)を各設問に明示するため、本文共有グループとして扱う。
     // リーダーは、その章群の中で最も小さい問番号(問1など)を持つエントリ
     let leader = members[0];
     members.forEach(m=>{ if(m.num < leader.num) leader = m; });
